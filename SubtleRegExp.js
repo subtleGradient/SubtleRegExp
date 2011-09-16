@@ -1,9 +1,8 @@
-;/*{       name: 'SubtleRegExp',
+;/*!{      name: 'SubtleRegExp',
          author: 'Thomas Aylott <thomas@mootools.net>',
-        license: 'to be decided'
-      copyright: '2011 Sencha, Inc.',
-    description: 'Build concise complex maintainable RegExps without having to remember the syntax!',
-
+        license: 'MIT',
+      copyright: 'Copyright © 2011 Sencha Labs Foundation',
+    description: 'Build concise complex maintainable RegExps without having to remember the syntax! And more stuff like that'
 }*/
 
 /*jshint asi:true, laxbreak:true*/
