@@ -5,34 +5,36 @@
     description: 'Build concise complex maintainable RegExps without having to remember the syntax!',
 
 }*/
+
+/*jshint asi:true, laxbreak:true*/
+
 (function(){
-var undefined
 ////////////////////////////////////////////////////////////////////////////////
 if (typeof exports != 'undefined') exports.SubtleRegExp = SubtleRegExp
 
+var slice = Array.prototype.slice
+
 var sr = SubtleRegExp
 
+/** @constructor */
 function SubtleRegExp(object){
     if (this instanceof SubtleRegExp) return this['new'].apply(this, arguments)
     return sr.cast(object)
 }
 
+/** Convert a `pattern` into a SubtleRegExp, without cloning */
 sr.cast = function(pattern){
-    if (pattern instanceof SubtleRegExp) return pattern
+    if (pattern instanceof SubtleRegExp)
+        return pattern
+    
     var regex = new SubtleRegExp
     
-    if (pattern instanceof SubtleRegExp)
-        return Object.create(pattern)
-    
-    else if (pattern instanceof RegExp) 
-        regex.patterns.push(pattern.source)
-    
-    else if (typeof pattern == 'object'){
+    if (pattern && typeof pattern == 'object' && !(pattern instanceof RegExp)){
         if (pattern instanceof Array) return regex.appendMany(pattern)
         else return regex.appendObj(pattern)
     }
     
-    else regex.patterns.push(pattern)
+    regex.patterns.push(pattern)
     return regex
 }
 
@@ -41,38 +43,48 @@ sr.cast = function(pattern){
 
 sr.prototype = {
     
+    /** @private */
     'new': function(){
         this.patterns = []
         this.appendMany(arguments)
     },
     
+    /** Augment the current pattern with another alternative match, with higher priority */
     prependAlt: function(pattern){
         this.patterns.unshift('|')
         this.prepend(pattern)
         return this
     },
     
+    /** Augment the current pattern with another alternative match, with lower priority */
     appendAlt: function(pattern){
         this.append(pattern)
         this.patterns.push('|')
         return this
     },
     
+    /** Augment the current pattern by adding an additional pattern before it */
     prepend: function(pattern){
-        this.patterns.reverse()
-        this.append(pattern)
-        this.patterns.reverse()
+        this.patterns.unshift(SubtleRegExp(pattern))
         return this
     },
     
+    /** Augment the current pattern by adding an additional pattern after it */
     append: function(pattern){
-        // console.log('append', require('util').inspect(pattern,false,1))
         this.patterns.push(SubtleRegExp(pattern))
         return this
     },
     
+    /** Augment the current pattern by adding multiple additional patterns after it */
+    appendMany: function(patterns){
+        for (var i=0; i < patterns.length; i++) {
+            this.append(patterns[i])
+        }
+        return this
+    },
+    
+    /** Augment the current pattern by adding multiple named captures */
     appendObj: function(patternObj){
-        console.log('appendObj')
         var i = 0
         for (var captureName in patternObj) {
             this['appendCapture' + (i==0? '' : 'Alt')](captureName, patternObj[captureName])
@@ -80,22 +92,19 @@ sr.prototype = {
         }
         return this
     },
+    
+    /** Augment the current pattern by adding multiple alternative named captures */
     appendCaptureAlt: function(captureName, pattern){
         this.patterns.push('|')
         this.appendCapture(captureName, pattern)
         return this
     },
+    
+    /** Augment the current pattern by adding multiple required named captures */
     appendCapture: function(captureName, pattern){
         pattern = SubtleRegExp(pattern)
         pattern.captureName = captureName
         this.append(pattern)
-        return this
-    },
-    
-    appendMany: function(patterns){
-        for (var i=0; i < patterns.length; i++) {
-            this.append(patterns[i])
-        }
         return this
     },
     
@@ -104,44 +113,65 @@ sr.prototype = {
     _min: 1,
     _max: 1,
     
+    /** Declare that this pattern should only match once */
     one: function(){
         this._min = 1
         this._max = 1
         return this
     },
+    /** Declare that this pattern should match at least `min` times */
     min: function(min){
         this._min = min || 0
         return this
     },
+    /** Declare that this pattern should match at most `max` times */
     max: function(max){
         this._max = max || null
         return this
     },
     
+    /** Declare that this pattern must be matched exactly from beginning to end */
+    exact: function(isExact){
+        if (isExact == null) isExact = true
+        this['^'] = isExact
+        this.$ = isExact
+        return this
+    },
+    
+    /** Test a string to see if matches this pattern. Cf. RegExp.prototype.test */
     test: function(){
+        // FIXME: Implement SubtleRegExp.prototype.test
         return true
     },
     
-    Result: Object,
+    // Result: Object,
+    // /** Execute this pattern on a string. Returns the next match. Cf. RegExp.prototype.exec */
+    // exec: function(string){
+    //     // FIXME: Implement SubtleRegExp.exec
+    //     // FIXME: Implement SubtleRegExp.exec support for named captures
+    //     // FIXME: Implement SubtleRegExp.exec support for sub-patterns
+    //     string = String(string)
+    //     result = new this.Result
+    //     result[0] = string
+    //     return result
+    // },
     
-    exec: function(string){
-        string = String(string)
-        result = new this.Result
-        result[0] = string
-        return result
-    },
-    
+    /** Convert this custom object to a string for use as a RegExp */
     toString: function(){
-        // console.log(require('util').inspect(this.patterns,false,9))
-        
         var group = !!this._group
-          , patternCount = this.patterns.length
+          , patterns = slice.call(this.patterns)
+          , patternCount = patterns.length
+          , index = patternCount
           , regex = ''
           , repeat
         
-        if (patternCount > 1) group = true
+        while (--index >= 0) {
+            if (patterns[index] instanceof RegExp) patterns[index] = patterns[index].source
+        }
         
-        regex += this.patterns.join('')
+        if (patternCount > 1 || this['^'] || this.$) group = true
+        
+        regex += patterns.join('')
         
         if      (this._min == 1 && this._max == 1   ) repeat = ''
         else if (this._min == 0 && this._max == 1   ) repeat = '?', group = true
@@ -149,62 +179,70 @@ sr.prototype = {
         else if (this._min == 1 && this._max == null) repeat = '+', group = true
         else repeat = '{' + this._min + ',' + this._max + '}', group = true
         
-        if (group) {
-            regex = '(?:' + regex
+        if (this.captureName != null) {
+            if (this.debug) regex = "<"+this.captureName+">" + regex
+            regex = '(' + regex
+            if (this.debug) regex += "</"+this.captureName+">"
             regex += ')'
         }
-        if (this.captureName) {
-            regex = '(' + /*"<"+this.captureName+">" + */regex
-            regex += ')'
-        }
+        else if (group) regex = '(?:' + regex + ')'
         regex += repeat
+        
+        if (this['^']) regex = '^' + regex
+        if (this.$) regex += '$'
+        
         return regex
     },
     
-    0:0
+    debug: false
 }
 
+
+/** Augment the current pattern with another alternative match, with lower priority */
 sr.or = sr.appendAlt
 
 ////////////////////////////////////////////////////////////////////////////////
 
-sr.escape = function(string){// Credit: XRegExp 0.6.1 (c) 2007-2008 Steven Levithan <http://stevenlevithan.com/regex/xregexp/> MIT License
-    return string.replace(/[-[\]{}()*+?.\\^$|,#\s]/g, sr.escapeChar)
+/** Escape a string for use in a RegExp */
+sr.escape = function(string){
+    return string.replace(sr.escape_re, '\\')
 }
-sr.escapeChar = function(match){ return '\\' + match }
+sr.escape_re = /(?=[-[\]{}()*+?.\\^$|,#\s])/g
 
-sr.balanced = function(begin, end){
+/** Create a balanced pattern
+    such as quoted strings with support for escaped quotes */
+sr.balanced = function(begin, end, exceptAfter){
     if (end == null) end = begin
-    return new SubtleRegExp(begin, sr.notChar(end,'/').min(0).max(false), end)
+    return new SubtleRegExp(begin, sr.notChar(end, exceptAfter || '/').min(0).max(false), end)
 }
 
-/*
+/** Create a pattern that matches any character that is not `chr`
     without exceptAfter
-    e.g. /'[^']*'/
+        e.g. /'[^']*'/
     with exceptAfter '\'
-    e.g. /'(?:\\'|[^'])*'/
+        e.g. /'(?:\\'|[^'])*'/
 */
-
 sr.notChar = function(chr, exceptAfter){
-    if (chr.length > 1) throw new Error('notChar is for single chars only')
-    var pattern = new SubtleRegExp("[^" + sr.escape(chr) + "]")
+    if (chr.length > 1) throw Error('notChar is for single chars only')
+    var pattern = SubtleRegExp('[^' + sr.escape(chr) + ']')
     if (exceptAfter != null) pattern.prependAlt(sr.escape(exceptAfter + chr))
     return pattern
 }
 
+/** Create a pattern that matches any of the arguments */
 sr.any = function(){
-    var patterns = Array.prototype.slice.call(arguments)
-      , patternChoices = []
-    for (var i=0; i < patterns.length; i++) {
-        if (i != 0) patternChoices.push('|')
-        patternChoices.push(patterns[i])
-    }
-    return new SubtleRegExp(patternChoices)
+    return SubtleRegExp(slice.call(arguments).join('|'))
 }
 
-sr.countCaptures = function(regexp){
-    return ''.match(regexp + "|").length - 1
+/** Return the number of capture groups in the pattern */
+sr.countCaptures = function(pattern){
+    return ''.match(pattern + "|").length - 1
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 }());
+
+/** Run the tests if executed directly */
+if (typeof module == 'object' && module.id == '.') {
+    require('./SubtleRegExp.test')
+}

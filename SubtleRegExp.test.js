@@ -8,11 +8,26 @@ console.assert('' + SubtleRegExp.notChar("'",'\\') == (/(?:\\'|[^'])/).source, '
 console.assert(SubtleRegExp.countCaptures(/0/) === 0)
 console.assert(SubtleRegExp.countCaptures(/(1)(2(3(4(5))))/) === 5)
 
+var pattern = RegExp(SubtleRegExp.any(1,2,3))
+console.assert( pattern.test(0) === false )
+console.assert( pattern.test(1) )
+console.assert( pattern.test(2) )
+console.assert( pattern.test(3) )
+console.assert( pattern.test(4) === false )
+
+pattern = RegExp(SubtleRegExp(/[0-9a-f]/), 'gim')
+console.assert(''+pattern == ''+(/[0-9a-f]/gim), pattern)
+pattern = RegExp(SubtleRegExp(pattern).exact(), 'gim')
+console.assert(''+pattern == ''+(/^(?:[0-9a-f])$/gim))
+pattern = RegExp(SubtleRegExp().exact(), 'gim')
+
+pattern = RegExp(SubtleRegExp(SubtleRegExp.escape('(foo)|(bar)')))
+console.assert(SubtleRegExp.countCaptures(pattern) === 0, 'must escape strings passed into SubtleRegExp')
 
 ////////////////////////////////////////////////////////////////////////////////
 
 
-function FAIL(message){throw new Error(message)}
+function FAIL(message){throw Error(message)}
 
 var html, tag
 
@@ -45,7 +60,7 @@ HTMLTag = new SubtleRegExp(
 
 
 console.log(''+HTMLTag)
-HTMLTag_re = new RegExp(HTMLTag, "i")
+HTMLTag_re = RegExp(HTMLTag, "i")
 
 html = "<tagName>"
 HTMLTag.test(html) || FAIL("HTMLTag must match " + html);
@@ -53,7 +68,7 @@ HTMLTag.test(html) || FAIL("HTMLTag must match " + html);
 console.log(HTMLTag_re)
 HTMLTag_re.exec(html)
 console.log(HTMLTag_re)
-HTMLTag.exec(html)
+// HTMLTag.exec(html)
 
 html = "</tagName>"
 HTMLTag.test(html) || FAIL("HTMLTag must match " + html);
