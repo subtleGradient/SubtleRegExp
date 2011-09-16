@@ -156,22 +156,48 @@ sr.prototype = {
     //     return result
     // },
     
+    defineSubPattern: function(subPatternName, subPattern){
+        if (!this.subPatterns) this.subPatterns = {}
+        this.subPatterns[subPatternName] = subPattern
+        return this
+    },
+    
+    lookupSubPattern: function(subPatternName){
+        // TODO: if (typeof subPatternName == number) ...
+        if (!this.subPatterns) return null
+        return this.subPatterns[subPatternName]
+    },
+    
+    disableSubCaptures: function(){
+        this.enableCapture_ = true
+        this.disableSubCaptures_ = true
+        return this
+    },
+    
+    enableSubCaptures: function(){
+        delete this.disableSubCaptures_
+        delete this.enableCapture_
+        return this
+    },
+    
     /** Convert this custom object to a string for use as a RegExp */
-    toString: function(){
+    toString: function(options){
+        if (!options) options = {}
+        if (!options.disableSubCaptures_) options.disableSubCaptures_ = this.disableSubCaptures_
+        // TODO: memoize
         var group = !!this._group
           , patterns = slice.call(this.patterns)
           , patternCount = patterns.length
-          , index = patternCount
           , regex = ''
           , repeat
         
-        while (--index >= 0) {
+        for (var index=0; index < patterns.length; index++) {
             if (patterns[index] instanceof RegExp) patterns[index] = patterns[index].source
+            if (!(index in patterns && patterns[index])) continue;
+            regex += patterns[index].toString(options)
         }
         
         if (patternCount > 1 || this['^'] || this.$) group = true
-        
-        regex += patterns.join('')
         
         if      (this._min == 1 && this._max == 1   ) repeat = ''
         else if (this._min == 0 && this._max == 1   ) repeat = '?', group = true
@@ -179,19 +205,46 @@ sr.prototype = {
         else if (this._min == 1 && this._max == null) repeat = '+', group = true
         else repeat = '{' + this._min + ',' + this._max + '}', group = true
         
-        if (this.captureName != null) {
-            if (this.debug) regex = "<"+this.captureName+">" + regex
+        // This must be above the capture group so that all the repetitions are captured
+        if (group) regex = '(?:' + regex + ')'
+        regex += repeat
+        
+        if (this.captureName != null && (!(options && options.disableSubCaptures_) || this.enableCapture_)) {
+            if (SubtleRegExp.debug) regex = "<"+this.captureName.split(' ').reverse()[0]+">" + regex
             regex = '(' + regex
-            if (this.debug) regex += "</"+this.captureName+">"
+            if (SubtleRegExp.debug) regex += "</"+this.captureName.split(' ').reverse()[0]+">"
             regex += ')'
         }
-        else if (group) regex = '(?:' + regex + ')'
-        regex += repeat
         
         if (this['^']) regex = '^' + regex
         if (this.$) regex += '$'
         
         return regex
+    },
+    
+    /** get an array of all captureNames */
+    getCaptureNames: function(prefix){
+        // TODO: memoize
+        var captureNames = []
+        if (this.captureName) {
+            var captureName = this.captureName.split(' ').reverse()[0]
+            if (prefix) captureName = prefix + '.' + captureName
+            captureNames.push(captureName)
+        }
+        
+        if (!this.disableSubCaptures_)
+        for (var index=0; index < this.patterns.length; index++) if (this.patterns[index] && this.patterns[index].getCaptureNames)
+                captureNames = captureNames.concat(this.patterns[index].getCaptureNames(captureName || prefix))
+        
+        return captureNames
+    },
+    
+    /** get the capture index for the captureName */
+    indexOf: function(captureName){
+        // TODO: memoize
+        var index = this.getCaptureNames().indexOf(captureName)
+        if (index != -1) index ++
+        return index
     },
     
     debug: false
@@ -213,7 +266,7 @@ sr.escape_re = /(?=[-[\]{}()*+?.\\^$|,#\s])/g
     such as quoted strings with support for escaped quotes */
 sr.balanced = function(begin, end, exceptAfter){
     if (end == null) end = begin
-    return new SubtleRegExp(begin, sr.notChar(end, exceptAfter || '/').min(0).max(false), end)
+    return new SubtleRegExp(begin, {contents: sr.notChar(end, exceptAfter || '/').min(0).max(false)}, end)
 }
 
 /** Create a pattern that matches any character that is not `chr`
